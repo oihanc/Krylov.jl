@@ -8,7 +8,56 @@
 # Alexis Montoison, <alexis.montoison@polymtl.ca>
 # Montreal, September 2018.
 
-export diom, diom!
+export diom, diom!, DiomTRWorkspace
+
+
+mutable struct DiomTRWorkspace{T,FC,S} <: KrylovWorkspace{T,FC,S}
+  m          :: Int
+  n          :: Int
+  Δx         :: S
+  x          :: S
+  t          :: S
+  z          :: S
+  w          :: S
+  P          :: Vector{S}
+  V          :: Vector{S}
+  L          :: Vector{FC}
+  H          :: Vector{FC}
+  warm_start :: Bool
+  stats      :: SimpleStats{T}
+end
+
+function DiomTRWorkspace(m::Integer, n::Integer, S::Type; memory::Integer = 20)
+  memory = min(m, memory)
+  FC  = eltype(S)
+  T   = real(FC)
+  Δx = S(undef, 0)
+  x  = S(undef, n)
+  t  = S(undef, n)
+  z  = S(undef, 0)
+  w  = S(undef, 0)
+  P  = S[S(undef, n) for i = 1 : memory-1]
+  V  = S[S(undef, n) for i = 1 : memory]
+  L  = Vector{FC}(undef, memory-1)
+  H  = Vector{FC}(undef, memory)
+  S = isconcretetype(S) ? S : typeof(x)
+  stats = Krylov.SimpleStats(0, false, false, false, T[], T[], T[], 0.0, "unknown")
+  workspace = DiomTRWorkspace{T,FC,S}(m, n, Δx, x, t, z, w, P, V, L, H, false, stats)
+  return workspace
+end
+
+function DiomTRWorkspace(A, b; memory::Integer = 20)
+  m, n = size(A)
+  S = ktypeof(b)
+  DiomTRWorkspace(m, n, S; memory=memory)
+end
+
+function DiomTRWorkspace(x; memory::Integer = 20)
+  nvar = length(x)
+  S = ktypeof(x)
+  DiomTRWorkspace(nvar, nvar, S; memory=memory)
+end
+
 
 """
     (x, stats) = diom(A, b::AbstractVector{FC};
@@ -119,7 +168,7 @@ optargs_diom = (:x0,)
 kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itmax, :timemax, :verbose, :history, :callback, :iostream)
 
 @eval begin
-  function diom!(workspace :: DiomWorkspace{T,FC,S}, $(def_args_diom...); $(def_kwargs_diom...)) where {T <: AbstractFloat, FC <: FloatOrComplex{T}, S <: AbstractVector{FC}}
+  function diom!(workspace :: Union{DiomWorkspace{T,FC,S}, DiomTRWorkspace{T, FC, S}}, $(def_args_diom...); $(def_kwargs_diom...)) where {T <: AbstractFloat, FC <: FloatOrComplex{T}, S <: AbstractVector{FC}}
 
     # Timer
     start_time = time_ns()
@@ -143,7 +192,7 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
     # Set up workspace.
     allocate_if(!MisI, workspace, :w, S, workspace.x)  # The length of w is n
     allocate_if(!NisI, workspace, :z, S, workspace.x)  # The length of z is n
-    
+
     Δx, x, t, P, V = workspace.Δx, workspace.x, workspace.t, workspace.P, workspace.V
     L, H, stats = workspace.L, workspace.H, workspace.stats
     warm_start = workspace.warm_start
@@ -173,7 +222,7 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
       return workspace
     end
 
-    iter = 0
+    iter  =  0
     itmax == 0 && (itmax = 2*n)
 
     ε = atol + rtol * rNorm
@@ -207,9 +256,7 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
     status = "unknown"
     user_requested_exit = false
     overtimed = false
-
     while !(solved || tired || user_requested_exit || overtimed)
-
       # Update iteration index.
       iter = iter + 1
 
@@ -228,7 +275,6 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
         H[diag] = kdot(n, w, V[ipos])    # hᵢ.ₖ = ⟨MANvₖ, vᵢ⟩
         kaxpy!(n, -H[diag], V[ipos], w)  # w ← w - hᵢ.ₖvᵢ
       end
-
       # Partial reorthogonalization of the Krylov basis.
       if reorthogonalization
         for i = max(1, iter-mem+1) : iter
@@ -264,6 +310,7 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
           end
         end
       end
+  
       # Compute next pivot lₖ₊₁.ₖ = hₖ₊₁.ₖ / uₖ.ₖ
       next_lpos = mod(iter, mem-1) + 1
       L[next_lpos] = Haux / H[1]
@@ -284,6 +331,7 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
           kaxpy!(n, -H[diag], P[ipos], P[ppos])
         end
       end
+  
       # pₐᵤₓ ← pₐᵤₓ + Nvₖ
       kaxpy!(n, one(FC), z, P[ppos])
 
@@ -306,24 +354,26 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
       if (radius > 0) && ((1/real(H[1]) ≤ 0) || (1/real(H[1]) > σ))
         if 1/real(H[1]) ≤ 0
           stats.indefinite = true
-          stats.npcCount = 1
         end
         H[1] = 1/σ
         on_boundary = true
       end
+
       # pₖ = pₐᵤₓ / uₖ.ₖ
+
       kdiv!(n, P[ppos], H[1])
 
       # Update solution xₖ.
       # xₖ = xₖ₋₁ + ξₖ * pₖ
       kaxpy!(n, ξ, P[ppos], x)
-
       # Compute residual norm.
       # ‖ M(b - Axₖ) ‖₂ = hₖ₊₁.ₖ * |ξₖ / uₖ.ₖ|
       rNorm = Haux * abs(ξ / H[1])
-      # TODO: update how the residual norm is computed.
+      # New way to compute the residual norm.
+      # ‖M(b - Axₖ)‖₂ = hₖ₊₁.ₖ * |ξₖ / uₖ.ₖ|
+      # rNorm1 = sqrt(rNorm1^2 + (ξ)^2*((c/H[1])^2+ (Haux/H[1])^2) - 2*((-1)^(iter+1)) *(c/H[1])* ξ * rNorm1)
       history && push!(rNorms, rNorm)
-
+      #(verbose > 0) && println("iter: $iter, rNorm: $rNorm, rNorm1: $rNorm1")
       # Stopping conditions that do not depend on user input.
       # This is to guard against tolerances that are unreasonably small.
       resid_decrease_mach = (rNorm + one(T) ≤ one(T))
@@ -340,11 +390,11 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
     (verbose > 0) && @printf(iostream, "\n")
 
     # Termination status
-    on_boundary         && (status = "on trust-region boundary")
-    tired               && (status = "maximum number of iterations exceeded")
-    solved              && (status = "solution good enough given atol and rtol")
-    user_requested_exit && (status = "user-requested exit")
-    overtimed           && (status = "time limit exceeded")
+    on_boundary             && (status = "on trust-region boundary")
+    tired                   && (status = "maximum number of iterations exceeded")
+    solved && !on_boundary             && (status = "solution good enough given atol and rtol")
+    user_requested_exit     && (status = "user-requested exit")
+    overtimed               && (status = "time limit exceeded")
 
     # Update x
     warm_start && kaxpy!(n, one(FC), Δx, x)
@@ -359,3 +409,5 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
     return workspace
   end
 end
+
+
