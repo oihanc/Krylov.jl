@@ -162,6 +162,7 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
     end
     MisI || mulorldiv!(r₀, M, t, ldiv)  # M(b - Ax₀)
     rNorm = knorm(n, r₀)                # β = ‖r₀‖₂
+    ukk = zero(FC)                      # uₖ.ₖ be used if we hit the boundary
     history && push!(rNorms, rNorm)
     if rNorm == 0
       stats.niter = 0
@@ -308,6 +309,7 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
           stats.indefinite = true
           stats.npcCount = 1
         end
+        ukk = H[1]
         H[1] = 1/σ
         on_boundary = true
       end
@@ -319,9 +321,11 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
       kaxpy!(n, ξ, P[ppos], x)
 
       # Compute residual norm.
-      # ‖ M(b - Axₖ) ‖₂ = hₖ₊₁.ₖ * |ξₖ / uₖ.ₖ|
-      rNorm = Haux * abs(ξ / H[1])
-      # TODO: update how the residual norm is computed.
+      if !on_boundary
+        rNorm = Haux * abs(ξ / H[1]) # ‖ M(b - Axₖ) ‖₂ = hₖ₊₁.ₖ * |ξₖ / uₖ.ₖ|
+      else 
+        rNorm = sqrt(abs(rNorm + ξ*ukk*H[1])^2 + abs(Haux*ξ/ukk)^2) # ‖ M(b - Axₖ) ‖₂ if we hit the boundary
+      end
       history && push!(rNorms, rNorm)
 
       # Stopping conditions that do not depend on user input.
