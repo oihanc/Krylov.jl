@@ -324,7 +324,7 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
       if !on_boundary
         rNorm = Haux * abs(ξ / H[1]) # ‖ M(b - Axₖ) ‖₂ = hₖ₊₁.ₖ * |ξₖ / uₖ.ₖ|
       else 
-        rNorm = sqrt(abs(rNorm + ξ*ukk*H[1])^2 + abs(Haux*ξ/H[1])^2) # ‖ M(b - Axₖ) ‖₂ if we hit the boundary
+        rNorm = sqrt(abs(rNorm + ξ*ukk*σ)^2 + abs(Haux*ξ*σ)^2) # ‖ M(b - Axₖ) ‖₂ if we hit the boundary
       end
       history && push!(rNorms, rNorm)
 
