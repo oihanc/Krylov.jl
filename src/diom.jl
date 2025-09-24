@@ -56,6 +56,8 @@ For an in-place variant that reuses memory across solves, see [`diom!`](@ref).
 * `M`: linear operator that models a nonsingular matrix of size `n` used for left preconditioning;
 * `N`: linear operator that models a nonsingular matrix of size `n` used for right preconditioning;
 * `ldiv`: define whether the preconditioners use `ldiv!` or `mul!`;
+* `radius`: add the trust-region constraint ‖x‖ ≤ `radius` if `radius > 0`. Useful to compute a step in a trust-region method for optimization.
+  - If 'radius' > 0, and nonpositive curvature is detected along the current search direction, we take the step to the trust-region boundary,
 * `reorthogonalization`: reorthogonalize the new vectors of the Krylov basis against the `memory` most recent vectors;
 * `atol`: absolute stopping tolerance based on the residual norm;
 * `rtol`: relative stopping tolerance based on the residual norm;
@@ -188,8 +190,7 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
     for i = 1 : mem-1
       kfill!(P[i], zero(FC))  # Directions Pₖ = NVₖ(Uₖ)⁻¹.
     end
-    pcg = P[1]
-    pcgnorm2 = zero(FC)
+    
     kfill!(H, zero(FC))  # Last column of the band hessenberg matrix Hₖ = LₖUₖ.
     # Each column has at most mem + 1 nonzero elements.
     # hᵢ.ₖ is stored as H[k-i+1], i ≤ k. hₖ₊₁.ₖ is not stored in H.
@@ -201,6 +202,9 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
     ξ = rNorm
     kdivcopy!(n, V[1], r₀, rNorm)  # v₁ = r₀ / ‖r₀‖
 
+    # Initialization of cg direction
+    pcg = r₀
+    pcgnorm2 = rNorm^2
     # Stopping criterion.
     solved = rNorm ≤ ε
     on_boundary = false
@@ -209,7 +213,7 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
     user_requested_exit = false
     overtimed = false
 
-    while !(solved || tired || user_requested_exit || overtimed)
+    while !(solved || tired || user_requested_exit || overtimed || on_boundary)
 
       # Update iteration index.
       iter = iter + 1
@@ -307,7 +311,6 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
       if (radius > 0) && ((1/real(H[1]) ≤ 0) || (1/real(H[1]) > σ))
         if 1/real(H[1]) ≤ 0
           stats.indefinite = true
-          stats.npcCount = 1
         end
         ukk = H[1]
         H[1] = 1/σ
@@ -335,7 +338,7 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
       # Update stopping criterion.
       user_requested_exit = callback(workspace) :: Bool
       resid_decrease_lim = rNorm ≤ ε
-      solved = resid_decrease_lim || resid_decrease_mach || on_boundary
+      solved = resid_decrease_lim || resid_decrease_mach
       tired = iter ≥ itmax
       timer = time_ns() - start_time
       overtimed = timer > timemax_ns
