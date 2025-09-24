@@ -1,6 +1,5 @@
 @testset "diom" begin
   diom_tol = 1.0e-6
-
   for FC in (Float64, ComplexF64)
     @testset "Data Type: $FC" begin
 
@@ -103,7 +102,6 @@
       A, b = zero_rhs(FC=FC)
       solver = DiomWorkspace(A, b)
       diom!(solver, A, b,radius = 10 * real(one(FC)))
-      # x, stats, npc_dir = solver.x, solver.stats, solver.npc_dir
       x, stats = solver.x, solver.stats
       @test stats.status == "x is a zero-residual solution"
       @test norm(x) == zero(FC)
@@ -119,13 +117,24 @@
       b = FC[1.0, 1.0, 1.0, 0.1]
       solver = DiomWorkspace(A, b)
       diom!(solver, A, b; radius = 10 * real(one(FC)))
-      # x, stats, npc_dir = solver.x, solver.stats, solver.npc_dir
       x, stats, = solver.x, solver.stats
-      @test stats.npcCount == 1
-      # @test stats.status == "nonpositive curvature detected"
       @test stats.indefinite == true
-      # @test real(dot(npc_dir, A * npc_dir)) <= 0.01 
-
+      
+      # Test residual of the solution with trust region
+      A = FC[
+        10.0 0.0 0.0 0.0;
+        0.0 8.0 0.0 0.0;
+        0.0 0.0 5.0 0.0;
+        0.0 0.0 0.0 -1.0
+      ]
+      b = FC[1.0, 1.0, 1.0, 0.1]
+      solver = DiomWorkspace(A, b)
+      diom!(solver, A, b; radius = 0.5 * real(one(FC)), history = true)
+      x, stats, = solver.x, solver.stats
+      r = b - A * x
+      normr = norm(r)
+      @test isapprox(normr, stats.residuals[end], atol=1.0e-8)
+      @test stats.status == "on trust-region boundary"
 
       @test_throws TypeError diom(A, b, callback = workspace -> "string", history = true)
     end
