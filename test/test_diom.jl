@@ -136,6 +136,41 @@
       @test isapprox(normr, stats.residuals[end], atol=1.0e-8)
       @test stats.status == "on trust-region boundary"
 
+      # test quadratic function values are computed correctly
+      A = FC[10.0 0.0 0.0 0.0;
+        0.0 8.0 0.0 0.0;
+        0.0 0.0 5.0 0.0;
+        0.0 0.0 0.0 1.0
+      ]
+      b = FC[1.0, 1.0, 1.0, 0.1]
+      solver = DiomWorkspace(A, b)
+      diom!(solver, A, b; history = true)
+      x, stats, = solver.x, solver.stats
+      qxs = stats.quadras
+      q = -dot(b, x) + dot(x, A * x)/2
+      @test length(qxs) == stats.niter + 1
+      @test abs(qxs[end] - q) ≤ 1.0e-10
+      @test abs(qxs[1]) ≤ 1.0e-10  # q(0) = 0
+      # test that q is decreasing
+      @test all(diff(qxs) .<= 1.0e-10)
+
+      # test quadratic function with trrust-region
+      A = FC[
+        10.0 0.0 0.0 0.0;
+        0.0 8.0 0.0 0.0;
+        0.0 0.0 5.0 0.0;
+        0.0 0.0 0.0 -1.0
+      ]
+      b = FC[1.0, 1.0, 1.0, 0.1]
+      solver = DiomWorkspace(A, b)
+      diom!(solver, A, b; radius = 0.5 * real(one(FC)), history = true)
+      x, stats, = solver.x, solver.stats
+      q = -dot(b, x) + dot(x, A * x)/2
+      qxs = stats.quadras
+      @test abs(q - qxs[end]) ≤ 1.0e-10
+      @test stats.status == "on trust-region boundary"
+
+    
       @test_throws TypeError diom(A, b, callback = workspace -> "string", history = true)
     end
   end
