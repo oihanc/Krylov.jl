@@ -71,7 +71,7 @@ For an in-place variant that reuses memory across solves, see [`cg!`](@ref).
 #### Output arguments
 
 * `x`: a dense vector of length `n`;
-* `stats`: statistics collected on the run in a [`SimpleStats`](@ref) structure.
+* `stats`: statistics collected on the run in a [`DiomCgStats`](@ref) structure.
 
 #### Reference
 
@@ -144,6 +144,7 @@ kwargs_cg = (:M, :ldiv, :radius, :linesearch, :atol, :rtol, :itmax, :timemax, :v
     Δx, x, r, p, Ap, stats = workspace.Δx, workspace.x, workspace.r, workspace.p, workspace.Ap, workspace.stats
     warm_start = workspace.warm_start
     rNorms = stats.residuals
+    qxs = stats.quadras
     reset!(stats)
     z = MisI ? r : workspace.z
     if linesearch || (radius > 0)
@@ -154,15 +155,17 @@ kwargs_cg = (:M, :ldiv, :radius, :linesearch, :atol, :rtol, :itmax, :timemax, :v
     if warm_start
       mul!(r, A, Δx)
       kaxpby!(n, one(FC), b, -one(FC), r)
+      qx = kdot(n, Δx, t)/2 - kdot(n, b, Δx)      # q(x₀) = ½ΔxᵀAΔx - bᵀΔx
     else
       kcopy!(n, r, b)  # r ← b
+      qx = zero(T)                 # q(0) = 0
     end
     MisI || mulorldiv!(z, M, r, ldiv)
     kcopy!(n, p, z)  # p ← z
     γ = kdotr(n, r, z)
     γ ≥ 0 || error("The linear operator `A` or the preconditioner `M` is not symmetric positive definite.")
     rNorm = sqrt(γ)
-    history && push!(rNorms, rNorm)
+    history && push!(rNorms, rNorm) ; push!(qxs, qx)
     if γ == 0
       stats.niter = 0
       stats.solved, stats.inconsistent = true, false
@@ -242,7 +245,9 @@ kwargs_cg = (:M, :ldiv, :radius, :linesearch, :atol, :rtol, :itmax, :timemax, :v
       γ_next = kdotr(n, r, z)
       γ_next ≥ 0 || error("The linear operator `A` or the preconditioner `M` is not symmetric positive definite.")
       rNorm = sqrt(γ_next)
-      history && push!(rNorms, rNorm)
+      qx +=  α^2 * pAp/2 -α * γ   # q(x) = q(x) + α²pᵀAp/2 - αbᵀp = q(x) + α²pᵀAp/2 - αγ
+
+      history && push!(rNorms, rNorm); push!(qxs, qx)
 
       # Stopping conditions that do not depend on user input.
       # This is to guard against tolerances that are unreasonably small.
