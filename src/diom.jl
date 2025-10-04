@@ -71,7 +71,7 @@ For an in-place variant that reuses memory across solves, see [`diom!`](@ref).
 #### Output arguments
 
 * `x`: a dense vector of length `n`;
-* `stats`: statistics collected on the run in a [`SimpleStats`](@ref) structure.
+* `stats`: statistics collected on the run in a [`DiomCgStats`](@ref) structure.
 
 #### Reference
 
@@ -150,22 +150,26 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
     L, H, stats = workspace.L, workspace.H, workspace.stats
     warm_start = workspace.warm_start
     rNorms = stats.residuals
+    qxs = stats.quadras
     reset!(stats)
     w  = MisI ? t : workspace.w
     r₀ = MisI ? t : workspace.w
+    
 
-    # Initial solution x₀ and residual r₀.
-    kfill!(x, zero(FC))  # x₀
+    # Initial solution x₀ and residual r₀ and q(x₀).
+    kfill!(x, zero(FC))  # x₀ 
     if warm_start
       mul!(t, A, Δx)
       kaxpby!(n, one(FC), b, -one(FC), t)
+      qx = kdot(n, Δx, t)/2 - kdot(n, b, Δx)      # q(x₀) = ½ΔxᵀAΔx - bᵀΔx
     else
       kcopy!(n, t, b)  # t ← b
+      qx = zero(T)  # Quadratic model value at x₀ = 0
     end
     MisI || mulorldiv!(r₀, M, t, ldiv)  # M(b - Ax₀)
     rNorm = knorm(n, r₀)                # β = ‖r₀‖₂
     ukk = zero(FC)                      # uₖ.ₖ be used if we hit the boundary
-    history && push!(rNorms, rNorm)
+    history && push!(rNorms, rNorm); push!(qxs, qx)
     if rNorm == 0
       stats.niter = 0
       stats.solved, stats.inconsistent = true, false
@@ -326,10 +330,12 @@ kwargs_diom = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
       # Compute residual norm.
       if !on_boundary
         rNorm = Haux * abs(ξ / H[1]) # ‖ M(b - Axₖ) ‖₂ = hₖ₊₁.ₖ * |ξₖ / uₖ.ₖ|
+        qx -= (1/2) *(1/abs(H[1])) * abs(ξ)^2   # q(xₖ) = q(xₖ₋₁) -0.5*ξₖ²/uₖ.ₖ         
       else 
         rNorm = sqrt(abs(rNorm - abs(ξ)*ukk*σ)^2 + abs(Haux*ξ*σ)^2) # ‖ M(b - Axₖ) ‖₂ if we hit the boundary
+        qx += (real(σ)^2/2)*real(ξ)^2 *real(ukk) - σ*real(ξ)^2   # q(xₖ) if we hit the boundary
       end
-      history && push!(rNorms, rNorm)
+      history && push!(rNorms, rNorm); push!(qxs, qx)
 
       # Stopping conditions that do not depend on user input.
       # This is to guard against tolerances that are unreasonably small.
