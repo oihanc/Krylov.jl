@@ -3,6 +3,8 @@ module Krylov
 using LinearAlgebra, SparseArrays, Printf
 import LinearAlgebra.BLAS: BlasInt, @blasfunc, libblastrampoline
 
+using LinearOperators
+
 include("krylov_stats.jl")
 
 include("krylov_utils.jl")
@@ -35,6 +37,8 @@ include("fom.jl")
 include("dqgmres.jl")
 include("gmres.jl")
 include("fgmres.jl")
+
+include("lbfgs.jl")
 
 include("gpmr.jl")
 
