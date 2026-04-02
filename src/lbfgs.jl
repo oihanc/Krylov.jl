@@ -63,7 +63,7 @@ kwargs_lbfgs = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itm
     LinearOperators.reset!(H)
     
     rNorms = stats.residuals
-    qxs = stats.quadras
+    qxs = stats.qvals
     reset!(stats)
     # w  = MisI ? t : workspace.w
     # r₀ = MisI ? t : workspace.w

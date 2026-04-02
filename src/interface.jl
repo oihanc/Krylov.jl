@@ -115,7 +115,7 @@ for (workspace, krylov, args, def_args, optargs, def_optargs, kwargs, def_kwargs
     @eval krylov_workspace(::Val{Symbol($krylov)}, A, b; memory::Integer = 20) = $workspace(A, b; memory)
   elseif krylov == :lbfgs
     @eval krylov_workspace(::Val{Symbol($krylov)}, m::Integer, n::Integer, S::Type; memory::Integer = 20, scaling::Bool = false) = $workspace(m, n, S; memory, scaling)
-    @eval krylov_workspace(::Val{Symbol($krylov)}, A, b; memory::Integer = 20, scaling::Bool) = $workspace(A, b; memory, scaling)
+    @eval krylov_workspace(::Val{Symbol($krylov)}, A, b; memory::Integer = 20, scaling::Bool = false) = $workspace(A, b; memory, scaling)
   #   # @eval krylov_workspace(::Val{Symbol($krylov)}, m::Integer, n::Integer, S::Type; memory::Integer = 20, scaling::Bool = false) = $workspace(m, n, S; memory, scaling)
   #   @eval krylov_workspace(::Val{Symbol($krylov)}, A, b; memory::Integer = 20) = $workspace(A, b; memory)
   elseif krylov in (:lslq, :lsmr, :lsqr, :minres, :symmlq)
