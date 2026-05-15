@@ -39,6 +39,7 @@ include("gmres.jl")
 include("fgmres.jl")
 
 include("lbfgs.jl")
+include("lsr1.jl")
 
 include("gpmr.jl")
 

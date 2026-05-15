@@ -113,6 +113,7 @@ for (KS, fun, nsol, nA, nAt, warm_start) in [
   (:CraigWorkspace    , :craig!     , 2, 1, 1, false)
   (:DiomWorkspace     , :diom!      , 1, 1, 0, true )
   (:LbfgsWorkspace    , :lbfgs!     , 1, 1, 0, false)
+  (:Lsr1Workspace     , :lsr1!      , 1, 1, 0, false)
   (:LslqWorkspace     , :lslq!      , 1, 1, 1, false)
   (:TrilqrWorkspace   , :trilqr!    , 2, 1, 1, true )
   (:CrmrWorkspace     , :crmr!      , 1, 1, 1, false)

@@ -85,6 +85,7 @@ for (workspace, krylov, args, def_args, optargs, def_optargs, kwargs, def_kwargs
   (:CraigWorkspace    , :craig     , args_craig     , def_args_craig     , ()                , ()                    , kwargs_craig     , def_kwargs_craig     )
   (:DiomWorkspace     , :diom      , args_diom      , def_args_diom      , optargs_diom      , def_optargs_diom      , kwargs_diom      , def_kwargs_diom      )
   (:LbfgsWorkspace    , :lbfgs     , args_lbfgs     , def_args_lbfgs     , optargs_lbfgs     , def_optargs_lbfgs     , kwargs_lbfgs     , def_kwargs_lbfgs     )
+  (:Lsr1Workspace     , :lsr1      , args_lsr1      , def_args_lsr1      , optargs_lsr1      , def_optargs_lsr1      , kwargs_lsr1      , def_kwargs_lsr1      )
   (:LslqWorkspace     , :lslq      , args_lslq      , def_args_lslq      , ()                , ()                    , kwargs_lslq      , def_kwargs_lslq      )
   (:TrilqrWorkspace   , :trilqr    , args_trilqr    , def_args_trilqr    , optargs_trilqr    , def_optargs_trilqr    , kwargs_trilqr    , def_kwargs_trilqr    )
   (:CrmrWorkspace     , :crmr      , args_crmr      , def_args_crmr      , ()                , ()                    , kwargs_crmr      , def_kwargs_crmr      )
@@ -114,6 +115,11 @@ for (workspace, krylov, args, def_args, optargs, def_optargs, kwargs, def_kwargs
     @eval krylov_workspace(::Val{Symbol($krylov)}, m::Integer, n::Integer, S::Type; memory::Integer = 20) = $workspace(m, n, S; memory)
     @eval krylov_workspace(::Val{Symbol($krylov)}, A, b; memory::Integer = 20) = $workspace(A, b; memory)
   elseif krylov == :lbfgs
+    @eval krylov_workspace(::Val{Symbol($krylov)}, m::Integer, n::Integer, S::Type; memory::Integer = 20, scaling::Bool = false) = $workspace(m, n, S; memory, scaling)
+    @eval krylov_workspace(::Val{Symbol($krylov)}, A, b; memory::Integer = 20, scaling::Bool) = $workspace(A, b; memory, scaling)
+  #   # @eval krylov_workspace(::Val{Symbol($krylov)}, m::Integer, n::Integer, S::Type; memory::Integer = 20, scaling::Bool = false) = $workspace(m, n, S; memory, scaling)
+  #   @eval krylov_workspace(::Val{Symbol($krylov)}, A, b; memory::Integer = 20) = $workspace(A, b; memory)
+  elseif krylov == :lsr1
     @eval krylov_workspace(::Val{Symbol($krylov)}, m::Integer, n::Integer, S::Type; memory::Integer = 20, scaling::Bool = false) = $workspace(m, n, S; memory, scaling)
     @eval krylov_workspace(::Val{Symbol($krylov)}, A, b; memory::Integer = 20, scaling::Bool) = $workspace(A, b; memory, scaling)
   #   # @eval krylov_workspace(::Val{Symbol($krylov)}, m::Integer, n::Integer, S::Type; memory::Integer = 20, scaling::Bool = false) = $workspace(m, n, S; memory, scaling)
@@ -174,6 +180,35 @@ for (workspace, krylov, args, def_args, optargs, def_optargs, kwargs, def_kwargs
       end
     end
   elseif krylov == :lbfgs
+    @eval begin
+      function $(krylov)($(def_args...); memory::Int = 20, scaling::Bool = false, $(def_kwargs...)) where {T <: AbstractFloat, FC <: FloatOrComplex{T}}
+        start_time = time_ns()
+        workspace = $workspace(A, b; memory, scaling)
+        elapsed_time = start_time |> ktimer
+        timemax -= elapsed_time
+        $(krylov!)(workspace, $(args...); $(kwargs...))
+        workspace.stats.timer += elapsed_time
+        return results(workspace)
+      end
+
+      krylov_solve(::Val{Symbol($krylov)}, $(def_args...); memory::Int = 20, scaling::Bool = false, $(def_kwargs...)) where {T <: AbstractFloat, FC <: FloatOrComplex{T}} = $(krylov)($(args...); memory, scaling, $(kwargs...))
+
+      if !isempty($optargs)
+        function $(krylov)($(def_args...), $(def_optargs...); memory::Int = 20, scaling::Bool = false, $(def_kwargs...)) where {T <: AbstractFloat, FC <: FloatOrComplex{T}}
+          start_time = time_ns()
+          workspace = $workspace(A, b; memory, scaling)
+          warm_start!(workspace, $(optargs...))
+          elapsed_time = start_time |> ktimer
+          timemax -= elapsed_time
+          $(krylov!)(workspace, $(args...); $(kwargs...))
+          workspace.stats.timer += elapsed_time
+          return results(workspace)
+        end
+
+        krylov_solve(::Val{Symbol($krylov)}, $(def_args...), $(def_optargs...); memory::Int = 20, scaling::Bool = false, $(def_kwargs...)) where {T <: AbstractFloat, FC <: FloatOrComplex{T}} = $(krylov)($(args...), $(optargs...); memory, scaling, $(kwargs...))
+      end
+    end
+  elseif krylov == :lsr1
     @eval begin
       function $(krylov)($(def_args...); memory::Int = 20, scaling::Bool = false, $(def_kwargs...)) where {T <: AbstractFloat, FC <: FloatOrComplex{T}}
         start_time = time_ns()

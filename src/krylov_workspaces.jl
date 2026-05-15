@@ -1,5 +1,5 @@
 export KrylovWorkspace, MinresWorkspace, CgWorkspace, CrWorkspace, SymmlqWorkspace, CgLanczosWorkspace,
-CgLanczosShiftWorkspace, MinresQlpWorkspace, DqgmresWorkspace, DiomWorkspace, LbfgsWorkspace, UsymlqWorkspace,
+CgLanczosShiftWorkspace, MinresQlpWorkspace, DqgmresWorkspace, DiomWorkspace, LbfgsWorkspace, Lsr1Workspace, UsymlqWorkspace,
 UsymqrWorkspace, TricgWorkspace, TrimrWorkspace, TrilqrWorkspace, CgsWorkspace, BicgstabWorkspace,
 BilqWorkspace, QmrWorkspace, BilqrWorkspace, CglsWorkspace, CglsLanczosShiftWorkspace, CrlsWorkspace, CgneWorkspace,
 CrmrWorkspace, LslqWorkspace, LsqrWorkspace, LsmrWorkspace, LnlqWorkspace, CraigWorkspace, CraigmrWorkspace,
@@ -861,6 +861,42 @@ function LbfgsWorkspace(A, b; memory::Integer = 20, scaling::Bool = false)
   m, n = size(A)
   S = ktypeof(b)
   LbfgsWorkspace(m, n, S; memory, scaling)
+end
+
+mutable struct Lsr1Workspace{T,FC,S,HOp} <: KrylovWorkspace{T,FC,S}
+    m      :: Int
+    n      :: Int
+    s      :: S
+    x      :: S
+    g      :: S
+    d      :: S
+    Ad     :: S
+    y      :: S
+    H      :: HOp
+    stats  :: DiomCgStats{T}
+end
+
+function Lsr1Workspace(m::Integer, n::Integer, S::Type; memory::Integer = 20, scaling::Bool = false)
+  memory = min(m, memory)
+  FC = eltype(S)
+  T  = real(FC)
+  s  = S(undef, n)
+  x  = S(undef, n)
+  g  = S(undef, n)
+  d  = S(undef, n)
+  Ad = S(undef, n)
+  y  = S(undef, n)
+  H  = LSR1Operator(T, n; mem=memory, scaling=scaling)
+  S = isconcretetype(S) ? S : typeof(x)
+  stats = DiomCgStats(0, false, false, false, 0, T[], T[], T[], T[], 0.0, "unknown")
+  workspace = Lsr1Workspace{T,FC,S,typeof(H)}(m, n, s, x, g, d, Ad, y, H, stats)
+  return workspace
+end
+  
+function Lsr1Workspace(A, b; memory::Integer = 20, scaling::Bool = false)
+  m, n = size(A)
+  S = ktypeof(b)
+  Lsr1Workspace(m, n, S; memory, scaling)
 end
 
 
