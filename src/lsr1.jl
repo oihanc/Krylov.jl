@@ -185,10 +185,6 @@ kwargs_lsr1 = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
       
       kdisplay(iter, verbose) && @printf(iostream, "%5d  %7.1e  %.2fs\n", iter, rNorm, start_time |> ktimer)
       
-      # update inverse Hessian approximation
-      if !(solved || tired || user_requested_exit || overtimed)
-        
-      end
 
     end
 
