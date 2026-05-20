@@ -88,8 +88,8 @@ kwargs_lbfgs = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itm
       stats.solved, stats.inconsistent = true, false
       stats.timer = start_time |> ktimer
       stats.status = "x is a zero-residual solution"
-      warm_start && kaxpy!(n, one(FC), s, p)
-      workspace.warm_start = false
+      # warm_start && kaxpy!(n, one(FC), s, p)
+      # workspace.warm_start = false
       return workspace
     end
 
@@ -115,7 +115,9 @@ kwargs_lbfgs = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itm
       
       # push!(H, s, g)      # update Inverse BFGS operator
       
-      mul!(d, -H, g)        # compute search direction
+      mul!(d, H, g)        # compute search direction
+      d .*= -1
+
       mul!(Ad, A, d)        # compute Ad
       
       dAd = kdot(n, d, Ad)  # compute curvature
@@ -139,36 +141,30 @@ kwargs_lbfgs = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itm
         # ss = kdot(n, s, s)
         # τ = (-ps + sqrt(ps^2 + ss*(radius^2 - kdot(n, p, p))))/ss
         
-        τ = maximum(to_boundary(n, p, d, -g, radius))
+        alpha = maximum(to_boundary(n, p, d, -1 .* g, radius))
 
         # kaxpy!(n, τ, s, p)    # p .= p .+ τ .* s
-        kaxpy!(n, τ, d, p)    # p .= p .+ τ .* s
+        kaxpy!(n, alpha, d, p)    # p .= p .+ τ .* d
         
         on_boundary = true
-        y .= τ .* Ad
+        y .= alpha .* Ad
         g .= g .+ y
-        rNorm = knorm(n, g)
-
-        if history
-          qx += τ*alpha*gd + τ*alpha*kdot(n, d, y)/2
-        end 
+        rNorm = knorm(n, g) 
       
       else
         y .= alpha .* Ad
         g .= g .+ y
-        rNorm = knorm(n, g)
         push!(H, s, y)
-
-        if history
-          qx += alpha*gd + alpha^2*dAd/2
-        end 
-        
       end
+
+      rNorm = knorm(n, g)
 
       if history
+        qx += alpha*gd + alpha*kdot(n, d, y)/2
+        # qx += alpha*gd + alpha^2*dAd/2
         push!(qxs, qx)
         push!(rNorms, rNorm)
-      end
+      end 
 
       # update stopping criteria
       user_requested_exit = callback(workspace) :: Bool
@@ -184,11 +180,6 @@ kwargs_lbfgs = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itm
       overtimed = timer > timemax_ns
       
       kdisplay(iter, verbose) && @printf(iostream, "%5d  %7.1e  %.2fs\n", iter, rNorm, start_time |> ktimer)
-      
-      # update inverse Hessian approximation
-      if !(solved || tired || user_requested_exit || overtimed)
-        
-      end
 
     end
 
