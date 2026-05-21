@@ -121,11 +121,22 @@ kwargs_lbfgs = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itm
       dAd = kdot(n, d, Ad)  # compute curvature
       gd = kdot(n, g, d)
 
-      # handle negative curvature
-      if radius > 0 && dAd <= 0
-        alpha = -sign(gd)*2*radius/knorm(n, d)
+      # step size
+      alpha = -gd/dAd
+
+      # Compute step size to boundary if applicable.
+      if radius == 0
+         σ = alpha
       else
-        alpha = -gd/dAd
+         σ = maximum(to_boundary(n, p, d, -g, radius)) # compute step size to boundary
+      end
+      # Move along p from x to the boundary if either
+      # the next step leads outside the trust region or
+      # we have nonpositive curvature.
+
+      if (radius > 0) && ((dAd ≤ 0) || (alpha > σ))
+        alpha = σ
+        on_boundary = true
       end
 
       # compute step size
@@ -133,37 +144,16 @@ kwargs_lbfgs = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itm
       p .= p .+ s
       
       # if step size is outside of radius -> project p on the radius
-      if radius > 0 && knorm(n, p) > radius
-        p .-= s
-        # ps = kdot(n, p, s)
-        # ss = kdot(n, s, s)
-        # τ = (-ps + sqrt(ps^2 + ss*(radius^2 - kdot(n, p, p))))/ss
-        
-        τ = maximum(to_boundary(n, p, d, -g, radius))
-
-        # kaxpy!(n, τ, s, p)    # p .= p .+ τ .* s
-        kaxpy!(n, τ, d, p)    # p .= p .+ τ .* s
-        
-        on_boundary = true
-        y .= τ .* Ad
-        g .= g .+ y
-        rNorm = knorm(n, g)
-
-        if history
-          qx += τ*alpha*gd + τ*alpha*kdot(n, d, y)/2
-        end 
       
-      else
-        y .= alpha .* Ad
-        g .= g .+ y
-        rNorm = knorm(n, g)
-        push!(H, s, y)
+      y .= alpha .* Ad
+      g .= g .+ y
+      rNorm = knorm(n, g)
+      push!(H, s, y)
 
-        if history
-          qx += alpha*gd + alpha^2*dAd/2
-        end 
+      if history
+        qx += alpha*gd + alpha^2*dAd/2
+      end 
         
-      end
 
       if history
         push!(qxs, qx)
@@ -184,11 +174,6 @@ kwargs_lbfgs = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itm
       overtimed = timer > timemax_ns
       
       kdisplay(iter, verbose) && @printf(iostream, "%5d  %7.1e  %.2fs\n", iter, rNorm, start_time |> ktimer)
-      
-      # update inverse Hessian approximation
-      if !(solved || tired || user_requested_exit || overtimed)
-        
-      end
 
     end
 

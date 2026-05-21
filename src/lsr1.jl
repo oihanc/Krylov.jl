@@ -1,8 +1,5 @@
 
-
 export lsr1, lsr1!
-
-
 
 function lsr1 end
 
@@ -36,6 +33,7 @@ kwargs_lsr1 = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
 
 @eval begin
   function lsr1!(workspace :: Lsr1Workspace{T,FC,S}, $(def_args_lsr1...); $(def_kwargs_lsr1...)) where {T <: AbstractFloat, FC <: FloatOrComplex{T}, S <: AbstractVector{FC}}
+
 
     # Timer
     start_time = time_ns()
@@ -158,7 +156,6 @@ kwargs_lsr1 = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
         g .= g .+ y
         rNorm = knorm(n, g)
         push!(H, y, s)
-
         if history
           qx += alpha*gd + alpha^2*dAd/2
         end 
@@ -205,6 +202,7 @@ kwargs_lsr1 = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itma
     stats.inconsistent = false
     stats.timer = start_time |> ktimer
     stats.status = status
+
     return workspace
   end
 end
