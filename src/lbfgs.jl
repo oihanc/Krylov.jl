@@ -143,7 +143,6 @@ kwargs_lbfgs = (:M, :N, :ldiv, :radius, :reorthogonalization, :atol, :rtol, :itm
       s .= alpha .* d
       p .= p .+ s
       
-      # if step size is outside of radius -> project p on the radius
       
       y .= alpha .* Ad
       g .= g .+ y
