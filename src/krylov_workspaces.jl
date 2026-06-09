@@ -829,6 +829,7 @@ end
 mutable struct LbfgsWorkspace{T,FC,S,HOp} <: KrylovWorkspace{T,FC,S}
     m      :: Int
     n      :: Int
+    Δx     :: S
     s      :: S
     x      :: S
     g      :: S
@@ -836,6 +837,7 @@ mutable struct LbfgsWorkspace{T,FC,S,HOp} <: KrylovWorkspace{T,FC,S}
     Ad     :: S
     y      :: S
     H      :: HOp
+    warm_start :: Bool
     stats  :: DiomCgStats{T}
 end
 
@@ -844,6 +846,7 @@ function LbfgsWorkspace(m::Integer, n::Integer, S::Type; memory::Integer = 20, s
   memory = min(m, memory)
   FC = eltype(S)
   T  = real(FC)
+  Δx = S(undef, 0)
   s  = S(undef, n)
   x  = S(undef, n)
   g  = S(undef, n)
@@ -853,7 +856,7 @@ function LbfgsWorkspace(m::Integer, n::Integer, S::Type; memory::Integer = 20, s
   H  = InverseLBFGSOperator(T, n; mem=memory, scaling=scaling)
   S = isconcretetype(S) ? S : typeof(x)
   stats = DiomCgStats(0, false, false, false, 0, T[], T[], T[], T[], 0.0, "unknown")
-  workspace = LbfgsWorkspace{T,FC,S,typeof(H)}(m, n, s, x, g, d, Ad, y, H, stats)
+  workspace = LbfgsWorkspace{T,FC,S,typeof(H)}(m, n, Δx, s, x, g, d, Ad, y, H, false, stats)
   return workspace
 end
   
