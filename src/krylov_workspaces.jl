@@ -1,5 +1,5 @@
 export KrylovWorkspace, MinresWorkspace, CgWorkspace, CrWorkspace, SymmlqWorkspace, CgLanczosWorkspace,
-CgLanczosShiftWorkspace, MinresQlpWorkspace, DqgmresWorkspace, DiomWorkspace, UsymlqWorkspace,
+CgLanczosShiftWorkspace, MinresQlpWorkspace, DqgmresWorkspace, DiomWorkspace, LbfgsWorkspace, UsymlqWorkspace,
 UsymqrWorkspace, TricgWorkspace, TrimrWorkspace, TrilqrWorkspace, CgsWorkspace, BicgstabWorkspace,
 BilqWorkspace, QmrWorkspace, BilqrWorkspace, CglsWorkspace, CglsLanczosShiftWorkspace, CrlsWorkspace, CgneWorkspace,
 CrmrWorkspace, LslqWorkspace, LsqrWorkspace, LsmrWorkspace, LnlqWorkspace, CraigWorkspace, CraigmrWorkspace,
@@ -824,6 +824,49 @@ function DiomWorkspace(A, b; memory::Integer = 20)
   S = ktypeof(b)
   DiomWorkspace(m, n, S; memory)
 end
+
+
+mutable struct LbfgsWorkspace{T,FC,S,HOp} <: KrylovWorkspace{T,FC,S}
+    m      :: Int
+    n      :: Int
+    Δx     :: S
+    s      :: S
+    x      :: S
+    g      :: S
+    d      :: S
+    Ad     :: S
+    y      :: S
+    H      :: HOp
+    warm_start :: Bool
+    stats  :: DiomCgStats{T}
+end
+
+
+function LbfgsWorkspace(m::Integer, n::Integer, S::Type; memory::Integer = 20, scaling::Bool = false)
+  memory = min(m, memory)
+  FC = eltype(S)
+  T  = real(FC)
+  Δx = S(undef, 0)
+  s  = S(undef, n)
+  x  = S(undef, n)
+  g  = S(undef, n)
+  d  = S(undef, n)
+  Ad = S(undef, n)
+  y  = S(undef, n)
+  H  = InverseLBFGSOperator(T, n; mem=memory, scaling=scaling)
+  S = isconcretetype(S) ? S : typeof(x)
+  stats = DiomCgStats(0, false, false, false, 0, T[], T[], T[], T[], 0.0, "unknown")
+  workspace = LbfgsWorkspace{T,FC,S,typeof(H)}(m, n, Δx, s, x, g, d, Ad, y, H, false, stats)
+  return workspace
+end
+  
+function LbfgsWorkspace(A, b; memory::Integer = 20, scaling::Bool = false)
+  m, n = size(A)
+  S = ktypeof(b)
+  LbfgsWorkspace(m, n, S; memory, scaling)
+end
+
+
 
 """
 Workspace for the in-place method [`usymlq!`](@ref).
