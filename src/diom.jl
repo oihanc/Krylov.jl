@@ -181,13 +181,8 @@ kwargs_workspace_diom = (:memory,)
     (verbose > 0) && @printf(iostream, "%5s  %7s  %5s\n", "k", "‖rₖ‖", "timer")
     kdisplay(iter, verbose) && @printf(iostream, "%5d  %7.1e  %.2fs\n", iter, rNorm, start_time |> ktimer)
 
+    # Set up workspace.
     mem = length(V)  # Memory
-    for i = 1 : mem
-      kfill!(V[i], zero(FC))  # Orthogonal basis of Kₖ(MAN, Mr₀).
-    end
-    for i = 1 : mem-1
-      kfill!(P[i], zero(FC))  # Directions Pₖ = NVₖ(Uₖ)⁻¹.
-    end
     kfill!(H, zero(FC))  # Last column of the band hessenberg matrix Hₖ = LₖUₖ.
     # Each column has at most mem + 1 nonzero elements.
     # hᵢ.ₖ is stored as H[k-i+1], i ≤ k. hₖ₊₁.ₖ is not stored in H.
@@ -271,6 +266,11 @@ kwargs_workspace_diom = (:memory,)
       # Compute the direction pₖ, the last column of Pₖ = NVₖ(Uₖ)⁻¹.
       # u₁.ₖp₁ + ... + uₖ.ₖpₖ = Nvₖ             if k ≤ mem
       # uₖ₋ₘₑₘ₊₁.ₖpₖ₋ₘₑₘ₊₁ + ... + uₖ.ₖpₖ = Nvₖ if k ≥ mem + 1
+      if iter < mem
+        # pₐᵤₓ ← Nvₖ
+        # The copy overwrites P[ppos], so the workspace does not need to be zero-initialized.
+        kcopy!(n, P[ppos], z)
+      end
       for i = max(1,iter-mem+1) : iter-1
         ipos = mod(i-1, mem-1) + 1  # Position corresponding to pᵢ in the circular stack P.
         diag = iter - i + 1
@@ -282,8 +282,10 @@ kwargs_workspace_diom = (:memory,)
           kaxpy!(n, -H[diag], P[ipos], P[ppos])
         end
       end
-      # pₐᵤₓ ← pₐᵤₓ + Nvₖ
-      kaxpy!(n, one(FC), z, P[ppos])
+      if iter ≥ mem
+        # pₐᵤₓ ← pₐᵤₓ + Nvₖ
+        kaxpy!(n, one(FC), z, P[ppos])
+      end
       # pₖ = pₐᵤₓ / uₖ.ₖ
       kdiv!(n, P[ppos], H[1])
 
