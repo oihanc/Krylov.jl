@@ -58,7 +58,7 @@ For an in-place variant that reuses memory across solves, see [`diom!`](@ref).
 * `ldiv`: define whether the preconditioners use `ldiv!` or `mul!`;
 * `radius`: add the trust-region constraint `‖x‖ ≤ radius` if `radius > 0`. Only useful for computing a step in a trust-region optimization method when A is Hermitian.
   If `radius > 0`, and nonpositive curvature is detected along the current search direction, we take the step to the trust-region boundary.
-  When `radius > 0`, we assumes that `A = A*`. In this case, the preconditioners `M` and `N` must be the identity operator;
+  When `radius > 0`, we assumes that `A = Aᴴ`. In this case, the preconditioners `M` and `N` must be the identity operator;
 * `reorthogonalization`: reorthogonalize the new vectors of the Krylov basis against the `memory` most recent vectors;
 * `atol`: absolute stopping tolerance based on the residual norm;
 * `rtol`: relative stopping tolerance based on the residual norm;
@@ -142,6 +142,9 @@ kwargs_workspace_diom = (:memory,)
     # Check M = Iₙ and N = Iₙ
     MisI = (M === I)
     NisI = (N === I)
+    if radius > 0
+      (NisI && MisI) || error("trust-region constraint is not supported with a preconditioner")
+    end
 
     # Check type consistency
     eltype(A) == FC || @warn "eltype(A) ≠ $FC. This could lead to errors or additional allocations in operator-vector products."
@@ -310,37 +313,28 @@ kwargs_workspace_diom = (:memory,)
         # pₐᵤₓ ← pₐᵤₓ + Nvₖ
         kaxpy!(n, one(FC), z, P[ppos])
       end
-      # pcg = ξₖ * pₐᵤₓ
+
       if radius > 0
-        kscal!(n, ξ, P[ppos])
+        # Compute step size to boundary.
+        # σ is the largest root of ‖x + σ ξₖ pₐᵤₓ‖ = radius.
+        σ₁, σ₂ = to_boundary(n, x, P[ppos], z, radius)
+        σ = max(σ₁ / ξ, σ₂ / ξ)
+
+        # Move along pₐᵤₓ from x to the boundary if either
+        # the next step leads outside the trust region or
+        # we have nonpositive curvature.
+        indefinite = H[1] ≤ zero(T)
+        stats.indefinite = indefinite
+        on_boundary = indefinite || (H[1] * σ < one(T))
       end
 
-      # Compute step size to boundary if applicable.
-      if radius > 0
-        if NisI && MisI
-          σ = maximum(to_boundary(n, x,  P[ppos], z, radius)) 
-        else
-          error("trust-region constraint is not supported with a preconditioner")
-        end
-      end
-
-      # Move along p from x to the boundary if either
-      # the next step leads outside the trust region or
-      # we have nonpositive curvature.
-      if radius > 0
-          indefinite = H[1] ≤ 0
-          stats.indefinite = indefinite
-          on_boundary = indefinite || (H[1] * σ < one(T))
-      end
-      
-      if radius == 0
-        kdiv!(n, P[ppos], H[1])  # pₖ = pₐᵤₓ / uₖ.ₖ
-      elseif on_boundary
-          kscal!(n, σ / ξ, P[ppos])  # pₖ = σ * pcg / ξ
+      if on_boundary
+        # pₖ = σ * pₐᵤₓ
+        kscal!(n, σ, P[ppos])
       else
-          kdiv!(n, P[ppos], ξ * H[1])  # pₖ = pcg / (ξ * uₖ.ₖ)
+        # pₖ = pₐᵤₓ / uₖ.ₖ
+        kdiv!(n, P[ppos], H[1])
       end
-
 
       # Update solution xₖ.
       # xₖ = xₖ₋₁ + ξₖ * pₖ
