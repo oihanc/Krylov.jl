@@ -71,7 +71,7 @@ For an in-place variant that reuses memory across solves, see [`cg!`](@ref).
 #### Output arguments
 
 * `x`: a dense vector of length `n`;
-* `stats`: statistics collected on the run in a [`DiomCgStats`](@ref) structure.
+* `stats`: statistics collected on the run in a [`SimpleStats`](@ref) structure.
 
 #### Reference
 

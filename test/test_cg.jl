@@ -1,5 +1,6 @@
 @testset "cg" begin
   cg_tol = 1.0e-6
+
   for FC in (Float64, ComplexF64)
     @testset "Data Type: $FC" begin
 
@@ -125,7 +126,7 @@
       qxs = stats.qvals
       @test abs(q - qxs[end]) ≤ 1.0e-10
 
-      # test quadratic function with warm start
+      # test trust region with warm start
       A = FC[
         10.0 0.0 0.0 0.0;
         0.0 8.0 0.0 0.0;
@@ -140,7 +141,25 @@
       q = -dot(b, x0) + dot(x0, A * x0)/2
       qxs = stats.qvals
       @test abs(q - qxs[1]) ≤ 1.0e-10
+      r = b - A * x
+      normr = norm(r)
+      @test isapprox(normr, stats.residuals[end], atol=1.0e-10)
 
+      # test preconditioning with trust-region
+      function LinearAlgebra.ldiv!(y::AbstractVector, M::SparseMatrixCSC, x::AbstractVector,)
+        y .= M \ x
+        return y
+      end
+      A, b, M = square_preconditioned(FC=FC)
+      (x, stats) = cg(A, b, M=M, radius = 0.1 * real(one(FC)), history = true)
+      r = b - A * x
+      normr = sqrt(real(dot(r, M * r)))
+      @test isapprox(normr, stats.residuals[end], atol=1.0e-8)
+      @test stats.status == "on trust-region boundary"
+      q = -dot(b, x) + dot(x, A * x)/2
+      qxs = stats.qvals
+      @test abs(q - qxs[end]) ≤ 1.0e-10
+    
       # Test singular and consistent system
       A, b = singular_consistent(FC=FC)
       x, stats = cg(A, b)

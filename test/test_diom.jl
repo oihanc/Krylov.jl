@@ -1,5 +1,6 @@
 @testset "diom" begin
   diom_tol = 1.0e-6
+  
   for FC in (Float64, ComplexF64)
     @testset "Data Type: $FC" begin
 
@@ -170,7 +171,7 @@
       @test abs(q - qxs[end]) ≤ 1.0e-10
       @test stats.status == "on trust-region boundary"
 
-      # test quadratic function with warm start
+      # test trust-region with warm start
       A = FC[
         10.0 0.0 0.0 0.0;
         0.0 8.0 0.0 0.0;
@@ -180,11 +181,30 @@
       b = FC[1.0, 1.0, 1.0, 0.1]
       x0 = FC[0.5, 0.5, 0.5, 0.05]
       solver = DiomWorkspace(A, b)
-      diom!(solver, A, b, x0; radius = 10 * real(one(FC)), history = true)
+      diom!(solver, A, b, x0; radius = 0.5 * real(one(FC)), history = true)
       x, stats, = solver.x, solver.stats
       q = -dot(b, x0) + dot(x0, A * x0)/2
       qxs = stats.qvals
       @test abs(q - qxs[1]) ≤ 1.0e-10
+      r = b - A * x
+      normr = norm(r)
+      @test isapprox(normr, stats.residuals[end], atol=1.0e-8)
+      @test stats.status == "on trust-region boundary"
+
+      # test split preconditioning with trust-region
+      function LinearAlgebra.ldiv!(y::AbstractVector, M::SparseMatrixCSC, x::AbstractVector,)
+        y .= M \ x
+        return y
+      end
+      A, b, M, N = two_preconditioners(FC=FC)
+      (x, stats) = diom(A, b, M=M, N=M, radius = 0.1 * real(one(FC)), history = true)
+      r = b - A * x
+      normr = norm(M * r)
+      @test isapprox(normr, stats.residuals[end], atol=1.0e-8)
+      @test stats.status == "on trust-region boundary"
+      q = -dot(b, x) + dot(x, A * x)/2
+      qxs = stats.qvals
+      @test abs(q - qxs[end]) ≤ 1.0e-10
     
       @test_throws TypeError diom(A, b, callback = workspace -> "string", history = true)
     end

@@ -56,12 +56,10 @@ For an in-place variant that reuses memory across solves, see [`diom!`](@ref).
 * `M`: linear operator that models a nonsingular matrix of size `n` used for left preconditioning;
 * `N`: linear operator that models a nonsingular matrix of size `n` used for right preconditioning;
 
-  **Note on preconditioners:**  
-  - When `radius > 0`, we assumes that `A = A*`. In this case, following CG implementation, `N` should be Hermitian and `M = N``.  
-
 * `ldiv`: define whether the preconditioners use `ldiv!` or `mul!`;
 * `radius`: add the trust-region constraint ‖x‖ ≤ `radius` if `radius > 0`. Only useful for computing a step in a trust-region optimization method when A is Hermitian.
-  If 'radius' > 0, and nonpositive curvature is detected along the current search direction, we take the step to the trust-region boundary,
+  If 'radius' > 0, and nonpositive curvature is detected along the current search direction, we take the step to the trust-region boundary.
+  When `radius > 0`, we assumes that `A = A*`. In this case, following CG implementation, `N` should be Hermitian and `M = N*`;
 * `reorthogonalization`: reorthogonalize the new vectors of the Krylov basis against the `memory` most recent vectors;
 * `atol`: absolute stopping tolerance based on the residual norm;
 * `rtol`: relative stopping tolerance based on the residual norm;
@@ -75,7 +73,7 @@ For an in-place variant that reuses memory across solves, see [`diom!`](@ref).
 #### Output arguments
 
 * `x`: a dense vector of length `n`;
-* `stats`: statistics collected on the run in a [`DiomCgStats`](@ref) structure.
+* `stats`: statistics collected on the run in a [`SimpleStats`](@ref) structure.
 
 #### Reference
 
@@ -144,8 +142,6 @@ kwargs_workspace_diom = (:memory,)
     # Check M = Iₙ and N = Iₙ
     MisI = (M === I)
     NisI = (N === I)
-    # Check M = N
-    MisN = (M === N)
     # Check type consistency
     eltype(A) == FC || @warn "eltype(A) ≠ $FC. This could lead to errors or additional allocations in operator-vector products."
     ktypeof(b) == S || error("ktypeof(b) must be equal to $S")
@@ -153,7 +149,6 @@ kwargs_workspace_diom = (:memory,)
     # Set up workspace.
     allocate_if(!MisI, workspace, :w, S, workspace.x)  # The length of w is n
     allocate_if(!NisI, workspace, :z, S, workspace.x)  # The length of z is n
-    
     Δx, x, t, P, V = workspace.Δx, workspace.x, workspace.t, workspace.P, workspace.V
     L, H, stats = workspace.L, workspace.H, workspace.stats
     warm_start = workspace.warm_start
@@ -321,18 +316,17 @@ kwargs_workspace_diom = (:memory,)
       if iter ≥ mem
         # pₐᵤₓ ← pₐᵤₓ + Nvₖ
         kaxpy!(n, one(FC), z, P[ppos])
+      end
+      # pcg =  ξₖ * pₐᵤₓ
+      kscal!(n, ξ, P[ppos])
 
       # Compute step size to boundary if applicable.
-      if radius == 0
-         σ = 1/H[1]  
-      elseif NisI && MisI
-         # pcg =  ξₖ * pₐᵤₓ
-         kscal!(n, ξ, P[ppos])
-         σ = maximum(to_boundary(n, x,  P[ppos], z, radius))
-      elseif MisN
-         σ = maximum(to_boundary(n, x,  P[ppos], z, radius, M=M, ldiv=!ldiv)) 
-      else
-         error("Must use split preconditioning with M = N when radius > 0")
+      if radius > 0
+        if NisI && MisI
+          σ = maximum(to_boundary(n, x,  P[ppos], z, radius)) 
+        else
+          σ = maximum(to_boundary(n, x,  P[ppos], z, radius, M=M, ldiv=!ldiv)) 
+        end
       end
 
       # Move along p from x to the boundary if either
@@ -341,17 +335,14 @@ kwargs_workspace_diom = (:memory,)
       if radius > 0
         indefinite = real(H[1]) ≤ 0
         stats.indefinite = indefinite
-        σinv = 1 / σ
-        on_boundary = indefinite || (real(H[1]) < σinv)
+        on_boundary = indefinite || (real(H[1]) * σ < 1)
         if on_boundary
           ukk = H[1]
-          H[1] = σinv
+          H[1] = 1 / σ
         end
-        # pₐᵤₓ = pcg / ξₖ
-        kdiv!(n, P[ppos], ξ)
       end
-      # pₖ = pₐᵤₓ / uₖ.ₖ
-      kdiv!(n, P[ppos], H[1])
+      # pₖ = pₐᵤₓ / uₖ.ₖ = pcg / (ξₖ* uₖ.ₖ)
+      kdiv!(n, P[ppos], ξ * H[1])
 
       # Update solution xₖ.
       # xₖ = xₖ₋₁ + ξₖ * pₖ
